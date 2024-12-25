@@ -5,24 +5,21 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import { instance } from '../api/api.instance.js';
-
 import uploadjpg from '../assets/rb_2857.png';
 import Image from '../components/Image.jsx';
 import LoaderUpload from '../components/LoaderUpload.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import img2 from '../assets/img.svg';
 import { fileToServer } from '../utils/index.js';
+import  {useSocket}  from './SockerProvider.jsx'; // Adjust the path as needed
+
 Dropzone.autoDiscover = false;
 
 const Main = () => {
-    const [socket, setSocket] = useState(null);
+    const socket = useSocket();
     const [myDropzone, setMyDropzone] = useState(null);
-
     const [loading, setLoading] = useState(() => localStorage.getItem('loading') || 'noaction');
-    const [file, setFile] = useState(() => {
-        const savedFile = localStorage.getItem('file');
-        return savedFile ? JSON.parse(savedFile) : null;
-    });
+    const [file, setFile] = useState(null);
     const [page, setPage] = useState(() => Number(localStorage.getItem('page') || 0));
     const [totalPages, setTotalPages] = useState(() => Number(localStorage.getItem('totalPages') || 0));
     const [action, setAction] = useState(() => JSON.parse(localStorage.getItem('action') || '[]'));
@@ -31,9 +28,8 @@ const Main = () => {
         return savedState ? JSON.parse(savedState) : null;
     });
     const [status, setStatus] = useState(() => localStorage.getItem('status') || 'default');
-
     const { t } = useTranslation();
-
+console.log(file);
     // Persist states to localStorage whenever they change
     useEffect(() => localStorage.setItem('loading', loading), [loading]);
     useEffect(() => localStorage.setItem('file', JSON.stringify(file)), [file]);
@@ -51,6 +47,7 @@ const Main = () => {
                 const dropzoneInstance = new Dropzone(dropzoneElement, {
                     url: '/api/upload',
                     autoProcessQueue: false,
+                    
                 });
 
                 dropzoneInstance.on('addedfile', (selectedFile) => {
@@ -69,44 +66,44 @@ const Main = () => {
             }
         };
     }, [myDropzone]);
-
+    useEffect(() => {
+        if (myDropzone) {
+            if (file) {
+                myDropzone.disable();
+            } else {
+                myDropzone.enable();
+            }
+        }
+    }, [file, myDropzone]);
     // Initialize Socket.io
     useEffect(() => {
-        const newSocket = io('wss://api.imd-ai.com/'); // Replace with your server URL
-        setSocket(newSocket);
-
-        state?.job_id &&
-            newSocket.on(`${state?.job_id}`, (message) => {
+        if (socket && state?.job_id) {
+            socket.on(`${state.job_id}`, (message) => {
+                console.log(message);
                 if (message?.status === 'pdf_started') {
                     setState((prevState) => ({ ...prevState, ...message }));
                     setTotalPages(message.page_num);
                 } else if (message?.status === 'pdf_completed') {
-                    setLoading('noaction');
                     setState((prevState) => ({ ...prevState, ...message }));
                 } else if (message?.status === 'page_completed' && !action.some((a) => a.page_num === message.page_num)) {
                     setAction((prevState) => [...prevState, message]);
                     setPage(message.page_num);
                 }
             });
+        }
 
         return () => {
-            newSocket.disconnect();
+            if (socket && state?.job_id) {
+                socket.off(`${state.job_id}`);
+            }
         };
-    }, [action, state?.job_id]);
+    }, [socket, state?.job_id, action]);
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
         if (selectedFile) {
-            const reader = new FileReader();
-
-            reader.onload = () => {
-                const base64File = reader.result; // Base64 string of the file
-                setFile(base64File);
-                localStorage.setItem('file', base64File); // Save base64 to localStorage
-                fileToServer(selectedFile, setLoading, setState); // Keep sending the original file for server actions
-            };
-
-            reader.readAsDataURL(selectedFile); // Convert the file to base64
+            setFile(selectedFile);
+            fileToServer(selectedFile, setLoading, setState);
         }
     };
 
@@ -142,14 +139,14 @@ const Main = () => {
             <div className="md:flex justify-between">
                 <Sidebar />
                 {/* Main Content Placeholder */}
-                <div className="   md:w-[80%] md:fixed z-10 right-0 md:border-l  py-5 scroll-y">
+                <div className="md:w-[80%] md:fixed z-10 right-0 md:border-l  py-5 scroll-y">
                     <div onDragOver={(event) => event.preventDefault()}>
                         <div className=" py-2">
                             <div className="w-[95%]  m-auto  flex flex-col  md:rounded-[30px] md:ring-4 ring-gray-100/50 md:bg-[#f5f9fd]    md:border-gray-300">
                                 <form className=" w-full p-4 space-y-6">
                                     {action.length === 0 ? (
                                         <>
-                                            <label
+                                            <label aria-disabled={file}
                                                 id="my-form"
                                                 htmlFor="dropzone-file"
                                                 className="flex flex-col items-center justify-center w-full h-[50vh] md:h-[65vh] border-2 border-[#97c8e7] border-dashed rounded-lg cursor-pointer bg-[#f5f9fd]  dark:bg-gray-700 upload-shadow dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600"
@@ -168,7 +165,7 @@ const Main = () => {
                                                         <p className="text-xs text-center text-gray-500 dark:text-gray-400">{t('onlyPdf')}</p>
                                                     </div>
                                                 )}
-                                                <input onChange={handleFileChange} id="dropzone-file" type="file" className="hidden" />
+                                                <input disabled={file} onChange={handleFileChange} id="dropzone-file" type="file" className="hidden" />
                                             </label>
                                         </>
                                     ) : (
