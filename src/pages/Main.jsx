@@ -5,107 +5,58 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import { instance } from '../api/api.instance.js';
+
 import uploadjpg from '../assets/rb_2857.png';
 import Image from '../components/Image.jsx';
 import LoaderUpload from '../components/LoaderUpload.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import img2 from '../assets/img.svg';
 import { fileToServer } from '../utils/index.js';
-import  {useSocket}  from './SockerProvider.jsx'; // Adjust the path as needed
-
+import useSocketStore from "../store/socketStore.js"
 Dropzone.autoDiscover = false;
 
 const Main = () => {
-    const socket = useSocket();
-    const [myDropzone, setMyDropzone] = useState(null);
-    const [loading, setLoading] = useState(() => localStorage.getItem('loading') || 'noaction');
-    const [file, setFile] = useState(null);
-    const [page, setPage] = useState(() => Number(localStorage.getItem('page') || 0));
-    const [totalPages, setTotalPages] = useState(() => Number(localStorage.getItem('totalPages') || 0));
-    const [action, setAction] = useState(() => JSON.parse(localStorage.getItem('action') || '[]'));
-    const [state, setState] = useState(() => {
-        const savedState = localStorage.getItem('state');
-        return savedState ? JSON.parse(savedState) : null;
-    });
-    const [status, setStatus] = useState(() => localStorage.getItem('status') || 'default');
+    const {
+        socket,
+        state,
+        file,
+        page,
+        totalPages,
+        action,
+        status,
+        loading,
+        initializeSocket,
+        setFile,
+        setLoading,
+        setState,
+        clearState,
+    } = useSocketStore(); // Access Zustand state and actions
+
     const { t } = useTranslation();
-console.log(file);
-    // Persist states to localStorage whenever they change
-    useEffect(() => localStorage.setItem('loading', loading), [loading]);
-    useEffect(() => localStorage.setItem('file', JSON.stringify(file)), [file]);
-    useEffect(() => localStorage.setItem('page', page.toString()), [page]);
-    useEffect(() => localStorage.setItem('totalPages', totalPages.toString()), [totalPages]);
-    useEffect(() => localStorage.setItem('action', JSON.stringify(action)), [action]);
-    useEffect(() => localStorage.setItem('state', JSON.stringify(state)), [state]);
-    useEffect(() => localStorage.setItem('status', status), [status]);
 
     // Initialize Dropzone
     useEffect(() => {
-        if (!myDropzone) {
-            const dropzoneElement = document.querySelector('#my-form');
-            if (dropzoneElement) {
-                const dropzoneInstance = new Dropzone(dropzoneElement, {
-                    url: '/api/upload',
-                    autoProcessQueue: false,
-                    
-                });
+        const dropzoneElement = document.querySelector('#my-form');
 
-                dropzoneInstance.on('addedfile', (selectedFile) => {
-                    setFile(selectedFile);
-                    fileToServer(selectedFile, setLoading, setState);
-                });
+        if (dropzoneElement) {
+            const dropzoneInstance = new Dropzone(dropzoneElement, {
+                url: '/api/upload',
+                autoProcessQueue: false,
+            });
 
-                setMyDropzone(dropzoneInstance);
-            }
-        }
-
-        return () => {
-            if (myDropzone) {
-                myDropzone.destroy();
-                setMyDropzone(null);
-            }
-        };
-    }, [myDropzone]);
-    useEffect(() => {
-        if (myDropzone) {
-            if (file) {
-                myDropzone.disable();
-            } else {
-                myDropzone.enable();
-            }
-        }
-    }, [file, myDropzone]);
-    // Initialize Socket.io
-    useEffect(() => {
-        if (socket && state?.job_id) {
-            socket.on(`${state.job_id}`, (message) => {
-                console.log(message);
-                if (message?.status === 'pdf_started') {
-                    setState((prevState) => ({ ...prevState, ...message }));
-                    setTotalPages(message.page_num);
-                } else if (message?.status === 'pdf_completed') {
-                    setState((prevState) => ({ ...prevState, ...message }));
-                } else if (message?.status === 'page_completed' && !action.some((a) => a.page_num === message.page_num)) {
-                    setAction((prevState) => [...prevState, message]);
-                    setPage(message.page_num);
-                }
+            dropzoneInstance.on('addedfile', (selectedFile) => {
+                setFile(selectedFile);
+                fileToServer(selectedFile, setLoading, setState);
             });
         }
+    }, [setFile, setLoading, setState]);
 
-        return () => {
-            if (socket && state?.job_id) {
-                socket.off(`${state.job_id}`);
-            }
-        };
-    }, [socket, state?.job_id, action]);
-
-    const handleFileChange = (event) => {
-        const selectedFile = event.target.files[0];
-        if (selectedFile) {
-            setFile(selectedFile);
-            fileToServer(selectedFile, setLoading, setState);
+    // Initialize the Socket
+    useEffect(() => {
+        if (state?.job_id) {
+            initializeSocket('wss://api.imd-ai.com/', state.job_id);
         }
-    };
+    }, [initializeSocket, state?.job_id]);
 
     const startEngine = (e) => {
         e.preventDefault();
@@ -118,35 +69,31 @@ console.log(file);
         }
     };
 
-    const doit = (action, job_id) => {
-        instance
-            .post(`/api/control/${job_id}`, { action })
-            .then(() => setStatus(action))
-            .catch(console.log);
+    const handleFileChange = (event) => {
+        const selectedFile = event.target.files[0];
+        if (selectedFile) {
+            setFile(selectedFile);
+            fileToServer(selectedFile, setLoading, setState);
+        }
     };
 
     const clear = () => {
-        setState({});
-        setAction([]);
-        setFile(null);
-        setPage(0);
-        setTotalPages(0);
-        setLoading('noaction');
-        setStatus('default');
+        clearState();
     };
     return (
         <>
             <div className="md:flex justify-between">
                 <Sidebar />
                 {/* Main Content Placeholder */}
-                <div className="md:w-[80%] md:fixed z-10 right-0 md:border-l  py-5 scroll-y">
+                <div className="   md:w-[80%] md:fixed z-10 right-0 md:border-l  py-5 scroll-y">
                     <div onDragOver={(event) => event.preventDefault()}>
                         <div className=" py-2">
                             <div className="w-[95%]  m-auto  flex flex-col  md:rounded-[30px] md:ring-4 ring-gray-100/50 md:bg-[#f5f9fd]    md:border-gray-300">
                                 <form className=" w-full p-4 space-y-6">
                                     {action.length === 0 ? (
                                         <>
-                                            <label aria-disabled={file}
+                                            <label
+                                                aria-disabled={file}
                                                 id="my-form"
                                                 htmlFor="dropzone-file"
                                                 className="flex flex-col items-center justify-center w-full h-[50vh] md:h-[65vh] border-2 border-[#97c8e7] border-dashed rounded-lg cursor-pointer bg-[#f5f9fd]  dark:bg-gray-700 upload-shadow dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600"
@@ -211,7 +158,6 @@ console.log(file);
                                                             width: `${totalPages > 0 ? (page * 100) / totalPages : 0}%`,
                                                         }}
                                                     ></div>
-
                                                 </div>
                                                 <div className="w-6 text-end">
                                                     <span className="text-sm text-gray-800 dark:text-white">{totalPages > 0 ? Math.floor((page * 100) / totalPages) : 0}%</span>
@@ -229,13 +175,12 @@ console.log(file);
                                                 >
                                                     {t('translate')}
                                                 </button>
-                                               
+
                                                 {/* download button */}
                                                 <a
-                                                    className={`py-2 px-5 text-sm font-medium text-center rounded-[7px] border flex items-center justify-center ${loading !== 'noaction'
-                                                            ? 'cursor-not-allowed text-gray-400 border-gray-400'
-                                                            : 'border-[#00B289] text-[#00B289]'
-                                                        }`}
+                                                    className={`py-2 px-5 text-sm font-medium text-center rounded-[7px] border flex items-center justify-center ${
+                                                        loading !== 'noaction' ? 'cursor-not-allowed text-gray-400 border-gray-400' : 'border-[#00B289] text-[#00B289]'
+                                                    }`}
                                                     href={loading === 'noaction' && state?.url ? state.url : undefined}
                                                     target={loading === 'noaction' ? '_blank' : undefined}
                                                     rel="noopener noreferrer"
@@ -244,15 +189,11 @@ console.log(file);
                                                     <i className="fa-solid fa-download text-[13px] ml-1.5"></i>
                                                 </a>
 
-                                                 {/* clear */}
-                                                 <button
-                                                    onClick={clear}
-                                                    className="py-3 px-5 text-sm font-medium active:bg-red-400 text-[#ee4455] bg-[#ffe4e5]  rounded-[7px] flex items-center"
-                                                >
+                                                {/* clear */}
+                                                <button onClick={clear} className="py-3 px-5 text-sm font-medium active:bg-red-400 text-[#ee4455] bg-[#ffe4e5]  rounded-[7px] flex items-center">
                                                     <i className="fa-solid fa-trash"></i>
                                                 </button>
                                             </div>
-
 
                                             <div className="flex gap-x-4  items-center">
                                                 {/* pause button */}
@@ -263,8 +204,9 @@ console.log(file);
                                                             doit('paused', state?.job_id);
                                                         }}
                                                         type="button"
-                                                        className={`text-white ${state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
-                                                            }  bg-white border   focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
+                                                        className={`text-white ${
+                                                            state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
+                                                        }  bg-white border   focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
                                                         disabled={!state?.job_id && loading !== 'translating'}
                                                     >
                                                         <img className="w-[15px]" src="https://img.icons8.com/?size=100&id=q0nxNdfpbYVl&format=png&color=ffd32c" alt="Pause" />
@@ -279,8 +221,9 @@ console.log(file);
                                                         }}
                                                         disabled={!state?.job_id && loading !== 'translating'}
                                                         type="button"
-                                                        className={`text-white ${state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
-                                                            }  bg-white border border-gray-300 hover:bg-gray-100 focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
+                                                        className={`text-white ${
+                                                            state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
+                                                        }  bg-white border border-gray-300 hover:bg-gray-100 focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
                                                     >
                                                         <img className="w-[15px]" src="https://img.icons8.com/?size=100&id=Uf14653P88Fy&format=png&color=008000" alt="Resume" />
                                                     </button>
@@ -294,8 +237,9 @@ console.log(file);
                                                         }}
                                                         disabled={!state?.job_id && loading !== 'translating'}
                                                         type="button"
-                                                        className={`text-white ${state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
-                                                            }  bg-white border border-gray-300 hover:bg-gray-100 focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
+                                                        className={`text-white ${
+                                                            state?.job_id && loading === 'translating' ? 'opacity-100' : 'opacity-30'
+                                                        }  bg-white border border-gray-300 hover:bg-gray-100 focus:ring-1 focus:outline-none focus:ring-blue-300 rounded-lg text-sm px-2 py-2 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800`}
                                                     >
                                                         <img className="w-[15px]" src="https://img.icons8.com/?size=100&id=80316&format=png&color=000000" alt="Cancel" />
                                                     </button>
